@@ -52,7 +52,6 @@ func getTasks(w http.ResponseWriter, r *http.Request) {
 		errEncode := errors.Wrap(errEncode, "Cant encode tasks and send to bot.")
 		logs.Warn(errEncode)
 	}
-	//TODO: Logs will be here soon
 }
 
 func FindUser(id string) User {
@@ -68,16 +67,14 @@ func FindUser(id string) User {
 	return users[len(users)-1]
 }
 
-func addTask(w http.ResponseWriter, r *http.Request) (User, error) {
+func addTask(r *http.Request) (User, error) {
 	var task ResponseTask
 	err := json.NewDecoder(r.Body).Decode(&task)
 	if err != nil {
-		//TODO: HANDLE ERROR AND MAKE RESPONSE
 		errors.Wrap(err, "Cant decode current task.")
 		logs.Warn(err)
 		return User{ID: "", Tasks: nil}, err
 	}
-	//TODO: Return only user
 	ourUser := FindUser(task.UserID)
 	result := Task{
 		ID:    strconv.Itoa(len(ourUser.Tasks) + 1),
@@ -90,7 +87,7 @@ func addTask(w http.ResponseWriter, r *http.Request) (User, error) {
 //createTask - должна только вызывать методы компонетнов бизнес логики и выводит ошибки
 func createTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
-	ourUser, err := addTask(w, r)
+	ourUser, err := addTask(r)
 	if err != nil {
 		errors.Wrap(err, "Cant decode current task.")
 		logs.Warn(err)
