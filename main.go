@@ -2,160 +2,139 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"log"
 	"net/http"
 	"strconv"
 )
 
-//Get all tasks - our /list
-func getTasks(w http.ResponseWriter, r *http.Request)  {
-	w.Header().Set("Content-type", "application/json")
-	//json.NewEncoder(w).Encode(tasks)
-	r.ParseForm()
-	s:=r.Form
-	a:=s["id"][0]
+var logs = logrus.New()
+
+func findTasks(inputID ResponseID) (output []Task, err error) {
 	for _, user := range users {
-		if user.ID == a {
+		if user.ID == inputID.UserID {
 			for _, task := range user.Tasks {
-			fmt.Println(user.ID)
-			w.Write([]byte(task.ID +". " + task.Title + "\n"))
+				output = append(output, task)
+			}
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
+	return output, nil
 }
 
+func outputTask(w http.ResponseWriter, r *http.Request) (error, []Task) {
+	var inputID ResponseID
+	err := json.NewDecoder(r.Body).Decode(&inputID)
+	if err != nil {
+		errors.Wrap(err, "Cant decode file.")
+		return err, nil
+	}
+	output, findErr := findTasks(inputID)
+	if findErr != nil {
+		errors.Wrap(findErr, "Cant find tasks for current ID.")
+		return findErr, nil
+	}
+	return nil, output
+}
 
-//Get single task
-/*func getTask(w http.ResponseWriter, r *http.Request)  {
-	w.Header().Set("Content-type", "application/json")
-	params := mux.Vars(r) //Get params
-	//Loop through tasks and find with id
-	for _, item := range users {
-		if item.ID == params["id"] {
-			json.NewEncoder(w).Encode(item)
-			return
+//Get all tasks - our /list
+func getTasks(w http.ResponseWriter, r *http.Request) {
+	err, output := outputTask(w, r)
+	if err != nil {
+		logs.Error(err, "Cant output tasks")
+	}
+	errEncode := json.NewEncoder(w).Encode(output)
+	if errEncode != nil {
+		errEncode := errors.Wrap(errEncode, "Cant encode tasks and send to bot.")
+		logs.Warn(errEncode)
+	}
+	//TODO: Logs will be here soon
+}
+
+func FindUser(id string) User {
+	for _, us := range users {
+		if us.ID == id {
+			return us
 		}
 	}
-	json.NewEncoder(w).Encode(&Task{})
-}*/
-
-
-func FindUser(id string) (User,int){
-	for i,us := range users{
-		if(us.ID==id) {
-			return us, i
-		}
-	}
-	fmt.Println("uyfhdfhhghgd")
-	users=append(users, User{
+	users = append(users, User{
 		ID:    id,
 		Tasks: nil,
 	})
-	return users[len(users)-1],len(users)-1
+	return users[len(users)-1]
 }
 
-
-
-//Create a new task - our /add
-func createTask(w http.ResponseWriter, r *http.Request)  {
-	w.Header().Set("Content-type", "application/json")
+func addTask(w http.ResponseWriter, r *http.Request) (User, error) {
 	var task ResponseTask
-	_ = json.NewDecoder(r.Body).Decode(&task)
-	var ourUser, index = FindUser(task.UserID)
-	var result Task
-	result = Task{
-		ID:     strconv.Itoa(len(ourUser.Tasks) + 1),
-		Title:  task.UserTask,
+	err := json.NewDecoder(r.Body).Decode(&task)
+	if err != nil {
+		//TODO: HANDLE ERROR AND MAKE RESPONSE
+		errors.Wrap(err, "Cant decode current task.")
+		logs.Warn(err)
+		return User{ID: "", Tasks: nil}, err
+	}
+	//TODO: Return only user
+	ourUser := FindUser(task.UserID)
+	result := Task{
+		ID:    strconv.Itoa(len(ourUser.Tasks) + 1),
+		Title: task.UserTask,
 	}
 	ourUser.Tasks = append(ourUser.Tasks, result)
-	users[index]=ourUser
-	fmt.Println(users)
-	}
+	return ourUser, nil
+}
 
-
-//Update task
-/*func updateTask(w http.ResponseWriter, r *http.Request)  {
+//createTask - должна только вызывать методы компонетнов бизнес логики и выводит ошибки
+func createTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
-	r.ParseForm()
-	s:=r.Form
-	a:=s["id"][0]
-	for index, item := range tasks {
-		if item.ID == a {
-			tasks = append(tasks[:index], tasks[index+1:]...)
-			var task Task
-			_ = json.NewDecoder(r.Body).Decode(&task)
-			task.ID = a //Mock ID
-			tasks = append(tasks, task)
-			json.NewEncoder(w).Encode(task)
-			return
-		}
+	ourUser, err := addTask(w, r)
+	if err != nil {
+		errors.Wrap(err, "Cant decode current task.")
+		logs.Warn(err)
 	}
-}*/
-
-
-//Delete task - our /do
-/*func deleteTask(w http.ResponseWriter, r *http.Request)  {
-	w.Header().Set("Content-type", "application/json")
-	r.ParseForm()
-	s:=r.Form
-	a:=s["id"][0]
-	for index, item := range tasks {
-		if item.ID == string(a) {
-			tasks = append(tasks[:index], tasks[index+1:]...)
-			break
-
-		}
-	}
-}*/
+	//TODO: Write id generator or use libs for this
+	//users[id] = ourUser
+}
 
 //Task struct
 type Task struct {
-	ID 		string 	`json:"id"`
-	Title 	string 	`json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type ResponseTask struct {
-	UserID 	 string `json:"user_id"`
-	UserTask string	`json:"user_task"`
+	UserID   string `json:"user_id"`
+	UserTask string `json:"user_task"`
+}
+
+type ResponseID struct {
+	UserID string `json:"user_id"`
 }
 
 type User struct {
-	ID 	string 	 `json:"id"`
+	ID    string `json:"id"`
 	Tasks []Task `json:"tasks"`
 }
 
-
-
-
-//Init tasks var as a slice user struct
+//Init users var as a slice user struct
 var users []User
 
 func main() {
-
 	//Init router
 	r := mux.NewRouter()
-
 	//Mock data
 	users = append(users, User{
-		ID:     "1",
+		ID: "1",
 		Tasks: []Task{{
 			ID:    "1",
 			Title: "Test title",
 		}},
 	})
-
-
-	//Route handlers / endpoints
-	r.HandleFunc("/api/tasks/", getTasks).Methods("GET")
-	//r.HandleFunc("/api/tasks/{id}", getTask).Methods("GET")
+	r.HandleFunc("/api/tasks/", getTasks).Methods("POST")
 	r.HandleFunc("/api/tasks/create/", createTask).Methods("POST")
-	//r.HandleFunc("/api/tasks/{id}", updateTask).Methods("PUT")
-	//r.HandleFunc("/api/tasks/do/", deleteTask).Methods("DELETE")
 	http.ListenAndServe(":8000", r)
 	log.Fatal(http.ListenAndServe(":8000", r))
 }
-
-
-
